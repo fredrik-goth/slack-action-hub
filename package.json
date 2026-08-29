@@ -1,7 +1,7 @@
 {
   "name": "slack-action-hub",
   "version": "1.0.0",
-  "description": "Unified Slack App and Visual Dashboard aggregating Mail and Trello tasks in one place.",
+  "description": "Intelligent Slack Agent aggregating Mail and Trello tasks directly into Slack.",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",

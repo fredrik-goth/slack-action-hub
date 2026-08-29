@@ -106,4 +106,41 @@ export function registerSlackActions(app: App): void {
       view: buildHomeTabView(tasks, stats, filter, providerStatus),
     });
   });
+
+  // 6. Agent Quick Action Shortcuts
+  app.action('agent_btn_urgent', async ({ ack, body, client }: any) => {
+    await ack();
+    const userId = body.user.id;
+    userFilters[userId] = { priority: 'urgent' };
+    const tasks = await taskAggregator.getTasks(userFilters[userId]);
+    const stats = taskAggregator.getStats();
+    await client.views.publish({
+      user_id: userId,
+      view: buildHomeTabView(tasks, stats, userFilters[userId], taskAggregator.getProviderStatus()),
+    });
+  });
+
+  app.action('agent_btn_trello', async ({ ack, body, client }: any) => {
+    await ack();
+    const userId = body.user.id;
+    userFilters[userId] = { source: 'trello' };
+    const tasks = await taskAggregator.getTasks(userFilters[userId]);
+    const stats = taskAggregator.getStats();
+    await client.views.publish({
+      user_id: userId,
+      view: buildHomeTabView(tasks, stats, userFilters[userId], taskAggregator.getProviderStatus()),
+    });
+  });
+
+  app.action('agent_btn_gmail', async ({ ack, body, client }: any) => {
+    await ack();
+    const userId = body.user.id;
+    userFilters[userId] = { source: 'gmail' };
+    const tasks = await taskAggregator.getTasks(userFilters[userId]);
+    const stats = taskAggregator.getStats();
+    await client.views.publish({
+      user_id: userId,
+      view: buildHomeTabView(tasks, stats, userFilters[userId], taskAggregator.getProviderStatus()),
+    });
+  });
 }
