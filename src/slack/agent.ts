@@ -3,24 +3,56 @@ import { taskAggregator } from '../services/taskAggregator';
 import { TaskItem, TaskSource } from '../types/task';
 
 export function registerSlackAgent(app: App): void {
-  // Listen to direct messages sent to the bot
-  app.message(async ({ message, say }: any) => {
-    // Ignore bot messages or subtyped messages without text
-    if (message.subtype || !message.text) return;
-    await handleUserQuery(message.text, say, message.user);
+  console.log('✓ [Slack Agent] Registering message, mention, and assistant listeners...');
+
+  // 1. Listen to all direct messages sent to the bot
+  app.event('message', async ({ event, client, say }: any) => {
+    console.log(`📩 [Slack Event: message] (channel_type: ${event.channel_type}): "${event.text}"`);
+
+    // Ignore bot messages, message edits/deletions, or empty messages
+    if (event.bot_id || event.subtype || !event.text) {
+      return;
+    }
+
+    try {
+      await handleUserQuery(event.text, say, event.user, client, event.channel);
+    } catch (err) {
+      console.error('[Slack Agent] Error processing message:', err);
+    }
   });
 
-  // Listen to mentions in channels (@ActionHub)
-  app.event('app_mention', async ({ event, say }: any) => {
+  // 2. Listen to mentions in channels (@ActionHub)
+  app.event('app_mention', async ({ event, client, say }: any) => {
+    console.log(`📩 [Slack Event: app_mention]: "${event.text}"`);
     if (!event.text) return;
-    // Strip the bot mention from the text
+
     const cleanText = event.text.replace(/<@[^>]+>/g, '').trim();
-    await handleUserQuery(cleanText, say, event.user);
+    try {
+      await handleUserQuery(cleanText, say, event.user, client, event.channel);
+    } catch (err) {
+      console.error('[Slack Agent] Error processing app_mention:', err);
+    }
+  });
+
+  // 3. Listen to Slack Assistant Thread Started (if Agent experience is enabled)
+  app.event('assistant_thread_started' as any, async ({ event, say }: any) => {
+    console.log('🤖 [Slack Assistant] Assistant thread started by user:', event.assistant_thread?.user_id);
+    await say({
+      blocks: buildHelpBlocks(),
+      text: '👋 Hi! I am your Action Hub Agent. How can I help you today?',
+    });
   });
 }
 
-async function handleUserQuery(query: string, say: Function, userId: string): Promise<void> {
+async function handleUserQuery(
+  query: string,
+  say: Function,
+  userId: string,
+  client: any,
+  channelId: string
+): Promise<void> {
   const normalized = query.trim().toLowerCase();
+  console.log(`🔍 [Slack Agent] Handling query: "${query}" (normalized: "${normalized}")`);
 
   // 1. Help & Greetings
   if (
@@ -196,7 +228,7 @@ function buildHelpBlocks(): KnownBlock[] {
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: "I continuously aggregate your tasks from **Gmail** and **Trello** into Slack. You can chat with me or check your **App Home Tab** at any time!",
+        text: 'I continuously aggregate your tasks from **Gmail** and **Trello** into Slack. You can chat with me or check your **App Home Tab** at any time!',
       },
     },
     { type: 'divider' },
@@ -204,7 +236,7 @@ function buildHelpBlocks(): KnownBlock[] {
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: "*Here are a few things you can ask me:*\n• `What are my urgent tasks today?`\n• `Show my Trello cards`\n• `Any actionable emails?`\n• `Summary` or `Stats`\n• `Sync my tasks`\n• `Complete <task name>`",
+        text: '*Here are a few things you can ask me:*\n• `What are my urgent tasks today?`\n• `Show my Trello cards`\n• `Any actionable emails?`\n• `Summary` or `Stats`\n• `Sync my tasks`\n• `Complete <task name>`',
       },
     },
     {
