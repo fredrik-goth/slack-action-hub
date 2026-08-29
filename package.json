@@ -1,0 +1,38 @@
+{
+  "name": "slack-action-hub",
+  "version": "1.0.0",
+  "description": "Unified Slack App and Visual Dashboard aggregating Mail and Trello tasks in one place.",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts",
+    "test": "ts-node tests/aggregator.test.ts"
+  },
+  "keywords": [
+    "slack",
+    "bolt",
+    "trello",
+    "gmail",
+    "google-tasks",
+    "productivity",
+    "task-aggregator"
+  ],
+  "author": "Fredrik Goth",
+  "license": "MIT",
+  "dependencies": {
+    "@slack/bolt": "^3.21.4",
+    "axios": "^1.7.9",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "googleapis": "^144.0.0",
+    "node-cron": "^3.0.3"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.13.5",
+    "@types/node-cron": "^3.0.11",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.3"
+  }
+}
