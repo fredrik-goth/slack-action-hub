@@ -29,7 +29,15 @@ export class GmailProvider implements TaskProvider {
   }
 
   isConfigured(): boolean {
-    return !!(this.oauth2Client && (this.gmail || this.tasks));
+    const isGoogleConfigured = !!(
+      config.google.clientId &&
+      config.google.clientSecret &&
+      config.google.refreshToken &&
+      !config.google.clientId.includes('your-') &&
+      !config.google.clientSecret.includes('your-') &&
+      !config.google.refreshToken.includes('your-')
+    );
+    return isGoogleConfigured && !!(this.oauth2Client && (this.gmail || this.tasks));
   }
 
   async fetchTasks(): Promise<TaskItem[]> {

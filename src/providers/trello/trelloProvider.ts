@@ -37,7 +37,12 @@ export class TrelloProvider implements TaskProvider {
   }
 
   isConfigured(): boolean {
-    return !!(this.apiKey && this.token);
+    return !!(
+      this.apiKey &&
+      this.token &&
+      !this.apiKey.includes('your-') &&
+      !this.token.includes('your-')
+    );
   }
 
   async fetchTasks(): Promise<TaskItem[]> {

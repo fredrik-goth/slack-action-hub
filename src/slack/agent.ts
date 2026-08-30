@@ -3,56 +3,95 @@ import { taskAggregator } from '../services/taskAggregator';
 import { TaskItem, TaskSource } from '../types/task';
 
 export function registerSlackAgent(app: App): void {
-  console.log('✓ [Slack Agent] Registering message, mention, and assistant listeners...');
+  console.log('✓ [Slack Agent] Registering channel, mention, and DM listeners...');
 
-  // 1. Listen to all direct messages sent to the bot
+  // 1. Listen to ALL messages (Direct Messages & Channel Messages where bot is present)
   app.event('message', async ({ event, client, say }: any) => {
-    console.log(`📩 [Slack Event: message] (channel_type: ${event.channel_type}): "${event.text}"`);
+    console.log(`📩 [Slack Message Event] Channel: ${event.channel} (${event.channel_type || 'channel'}) User: ${event.user} Text: "${event.text}"`);
 
-    // Ignore bot messages, message edits/deletions, or empty messages
+    // Ignore bot messages, message updates/deletions, or messages without text
     if (event.bot_id || event.subtype || !event.text) {
       return;
     }
 
     try {
-      await handleUserQuery(event.text, say, event.user, client, event.channel);
+      await handleUserQuery({
+        query: event.text,
+        say,
+        client,
+        channelId: event.channel,
+        threadTs: event.thread_ts || event.ts,
+        userId: event.user,
+      });
     } catch (err) {
-      console.error('[Slack Agent] Error processing message:', err);
+      console.error('[Slack Agent] Error in message handler:', err);
     }
   });
 
-  // 2. Listen to mentions in channels (@ActionHub)
+  // 2. Listen to @mentions in channels (@ActionHub <query>)
   app.event('app_mention', async ({ event, client, say }: any) => {
-    console.log(`📩 [Slack Event: app_mention]: "${event.text}"`);
+    console.log(`📩 [Slack App Mention Event] Channel: ${event.channel} Text: "${event.text}"`);
     if (!event.text) return;
 
+    // Strip the bot mention <@U123456> from the text
     const cleanText = event.text.replace(/<@[^>]+>/g, '').trim();
+
     try {
-      await handleUserQuery(cleanText, say, event.user, client, event.channel);
+      await handleUserQuery({
+        query: cleanText || 'help',
+        say,
+        client,
+        channelId: event.channel,
+        threadTs: event.thread_ts || event.ts,
+        userId: event.user,
+      });
     } catch (err) {
-      console.error('[Slack Agent] Error processing app_mention:', err);
+      console.error('[Slack Agent] Error in app_mention handler:', err);
     }
   });
 
   // 3. Listen to Slack Assistant Thread Started (if Agent experience is enabled)
-  app.event('assistant_thread_started' as any, async ({ event, say }: any) => {
-    console.log('🤖 [Slack Assistant] Assistant thread started by user:', event.assistant_thread?.user_id);
-    await say({
-      blocks: buildHelpBlocks(),
-      text: '👋 Hi! I am your Action Hub Agent. How can I help you today?',
-    });
+  app.event('assistant_thread_started' as any, async ({ event, client, say }: any) => {
+    console.log('🤖 [Slack Assistant] Assistant thread started:', event);
+    try {
+      await say({
+        blocks: buildHelpBlocks(),
+        text: '👋 Hi! I am your Action Hub Agent. How can I help you today?',
+      });
+    } catch (err) {
+      console.error('[Slack Assistant] Error in thread started:', err);
+    }
   });
 }
 
-async function handleUserQuery(
-  query: string,
-  say: Function,
-  userId: string,
-  client: any,
-  channelId: string
-): Promise<void> {
+interface QueryContext {
+  query: string;
+  say: Function;
+  client: any;
+  channelId: string;
+  threadTs?: string;
+  userId: string;
+}
+
+async function handleUserQuery(ctx: QueryContext): Promise<void> {
+  const { query, say, client, channelId, threadTs } = ctx;
   const normalized = query.trim().toLowerCase();
-  console.log(`🔍 [Slack Agent] Handling query: "${query}" (normalized: "${normalized}")`);
+  console.log(`🔍 [Slack Agent] Processing query: "${query}" (normalized: "${normalized}")`);
+
+  // Helper to send messages safely (via say or fallback to chat.postMessage)
+  const sendResponse = async (payload: { text: string; blocks?: KnownBlock[] }) => {
+    try {
+      await say(payload);
+    } catch (sayErr) {
+      console.warn('[Slack Agent] say() failed, falling back to client.chat.postMessage:', sayErr);
+      await client.chat.postMessage({
+        channel: channelId,
+        thread_ts: threadTs,
+        text: payload.text,
+        blocks: payload.blocks,
+      });
+    }
+  };
 
   // 1. Help & Greetings
   if (
@@ -62,7 +101,7 @@ async function handleUserQuery(
     normalized === 'hey' ||
     normalized === ''
   ) {
-    await say({
+    await sendResponse({
       blocks: buildHelpBlocks(),
       text: '👋 Hi! I am your Action Hub Agent. How can I help you today?',
     });
@@ -71,10 +110,10 @@ async function handleUserQuery(
 
   // 2. Sync / Refresh Command
   if (normalized.includes('sync') || normalized.includes('refresh') || normalized.includes('update')) {
-    await say({ text: '🔄 Syncing your latest actions from Trello & Gmail...' });
+    await sendResponse({ text: '🔄 Syncing your latest actions from Trello & Gmail...' });
     const tasks = await taskAggregator.refreshTasks();
     const stats = taskAggregator.getStats(tasks);
-    await say({
+    await sendResponse({
       blocks: buildSummaryBlocks(tasks, stats, '✅ Sync Complete! Here is your current status:'),
       text: `Sync complete! You have ${stats.pending} pending actions.`,
     });
@@ -91,7 +130,7 @@ async function handleUserQuery(
   ) {
     const tasks = await taskAggregator.getTasks();
     const stats = taskAggregator.getStats(tasks);
-    await say({
+    await sendResponse({
       blocks: buildSummaryBlocks(tasks, stats, '📊 Action Hub Executive Summary'),
       text: `Executive Summary: ${stats.pending} pending actions (${stats.overdue} urgent/overdue).`,
     });
@@ -113,11 +152,11 @@ async function handleUserQuery(
     );
 
     if (urgentTasks.length === 0) {
-      await say({
+      await sendResponse({
         text: '🎉 Great news! You have no urgent or overdue actions right now.',
       });
     } else {
-      await say({
+      await sendResponse({
         blocks: buildTaskListBlocks(
           urgentTasks,
           `🚨 High Priority & Urgent Actions (${urgentTasks.length})`
@@ -132,7 +171,7 @@ async function handleUserQuery(
   if (normalized.includes('trello') || normalized.includes('card') || normalized.includes('board')) {
     const tasks = await taskAggregator.getTasks({ source: 'trello' });
     const pending = tasks.filter((t) => t.status !== 'completed');
-    await say({
+    await sendResponse({
       blocks: buildTaskListBlocks(pending, `🏷️ Trello Cards Assigned to You (${pending.length})`),
       text: `Found ${pending.length} open Trello cards.`,
     });
@@ -147,7 +186,7 @@ async function handleUserQuery(
   ) {
     const tasks = await taskAggregator.getTasks({ source: 'gmail' });
     const pending = tasks.filter((t) => t.status !== 'completed');
-    await say({
+    await sendResponse({
       blocks: buildTaskListBlocks(pending, `✉️ Actionable Gmail Messages (${pending.length})`),
       text: `Found ${pending.length} actionable email threads.`,
     });
@@ -157,7 +196,7 @@ async function handleUserQuery(
   if (normalized.includes('google task') || normalized.includes('gtask')) {
     const tasks = await taskAggregator.getTasks({ source: 'google_tasks' });
     const pending = tasks.filter((t) => t.status !== 'completed');
-    await say({
+    await sendResponse({
       blocks: buildTaskListBlocks(pending, `📋 Google Tasks (${pending.length})`),
       text: `Found ${pending.length} pending Google Tasks.`,
     });
@@ -180,11 +219,11 @@ async function handleUserQuery(
 
     if (match) {
       await taskAggregator.completeTask(match.id);
-      await say({
+      await sendResponse({
         text: `✅ Marked as complete: *${match.title}*`,
       });
     } else {
-      await say({
+      await sendResponse({
         text: `⚠️ Could not find an active task matching "${searchTarget}". Try typing \`summary\` or check your App Home.`,
       });
     }
@@ -196,7 +235,7 @@ async function handleUserQuery(
   const pendingMatches = matchingTasks.filter((t) => t.status !== 'completed');
 
   if (pendingMatches.length > 0) {
-    await say({
+    await sendResponse({
       blocks: buildTaskListBlocks(
         pendingMatches,
         `🔍 Search Results for "${query}" (${pendingMatches.length})`
@@ -204,7 +243,7 @@ async function handleUserQuery(
       text: `Found ${pendingMatches.length} tasks matching "${query}".`,
     });
   } else {
-    await say({
+    await sendResponse({
       text: `🤔 I couldn't find any pending actions matching "${query}". Try asking for "urgent tasks", "trello", "emails", or "summary"!`,
     });
   }
