@@ -1,15 +1,16 @@
-import { google, gmail_v1, tasks_v1 } from 'googleapis';
+import { google, gmail_v1, tasks_v1, calendar_v3 } from 'googleapis';
 import { TaskProvider } from '../../types/provider';
 import { TaskItem, TaskPriority } from '../../types/task';
 import { config } from '../../config';
 
 export class GmailProvider implements TaskProvider {
-  readonly name = 'Gmail & Google Tasks';
+  readonly name = 'Google Workspace (Gmail, Calendar, Tasks)';
   readonly source = 'gmail' as const;
 
   private oauth2Client: any = null;
   private gmail: gmail_v1.Gmail | null = null;
   private tasks: tasks_v1.Tasks | null = null;
+  private calendar: calendar_v3.Calendar | null = null;
 
   constructor() {
     if (config.google.clientId && config.google.clientSecret && config.google.refreshToken) {
@@ -25,6 +26,7 @@ export class GmailProvider implements TaskProvider {
 
       this.gmail = google.gmail({ version: 'v1', auth: this.oauth2Client });
       this.tasks = google.tasks({ version: 'v1', auth: this.oauth2Client });
+      this.calendar = google.calendar({ version: 'v3', auth: this.oauth2Client });
     }
   }
 
@@ -37,7 +39,7 @@ export class GmailProvider implements TaskProvider {
       !config.google.clientSecret.includes('your-') &&
       !config.google.refreshToken.includes('your-')
     );
-    return isGoogleConfigured && !!(this.oauth2Client && (this.gmail || this.tasks));
+    return isGoogleConfigured && !!(this.oauth2Client && (this.gmail || this.tasks || this.calendar));
   }
 
   async fetchTasks(): Promise<TaskItem[]> {
@@ -46,6 +48,7 @@ export class GmailProvider implements TaskProvider {
     }
 
     const items: TaskItem[] = [];
+    const now = new Date();
 
     // 1. Fetch Gmail Starred / Action Items
     if (this.gmail) {
@@ -82,7 +85,7 @@ export class GmailProvider implements TaskProvider {
               title: `✉️ ${title}`,
               description: detail.data.snippet || undefined,
               status: 'pending',
-              priority: 'high', // Actionable/Starred emails default to high priority
+              priority: 'high',
               url: `https://mail.google.com/mail/u/0/#inbox/${detail.data.threadId || msg.id}`,
               metadata: {
                 sender,
@@ -101,7 +104,59 @@ export class GmailProvider implements TaskProvider {
       }
     }
 
-    // 2. Fetch Google Tasks
+    // 2. Fetch Google Calendar Events (Today and upcoming 48 hours)
+    if (this.calendar) {
+      try {
+        const timeMin = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+        const timeMax = new Date(now.getTime() + 48 * 60 * 60 * 1000);
+
+        const calRes = await this.calendar.events.list({
+          calendarId: 'primary',
+          timeMin: timeMin.toISOString(),
+          timeMax: timeMax.toISOString(),
+          singleEvents: true,
+          orderBy: 'startTime',
+          maxResults: 15,
+        });
+
+        const events = calRes.data.items || [];
+        for (const ev of events) {
+          if (!ev.id || !ev.summary) continue;
+
+          const startStr = ev.start?.dateTime || ev.start?.date;
+          const startDate = startStr ? new Date(startStr) : undefined;
+          let priority: TaskPriority = 'medium';
+
+          if (startDate) {
+            const diffHours = (startDate.getTime() - now.getTime()) / (1000 * 60 * 60);
+            if (diffHours < 0) priority = 'urgent'; // Currently happening / passed today
+            else if (diffHours <= 2) priority = 'urgent'; // Happening soon!
+            else if (diffHours <= 24) priority = 'high'; // Today
+          }
+
+          items.push({
+            id: `cal_${ev.id}`,
+            source: 'calendar',
+            title: `📅 ${ev.summary}`,
+            description: ev.description || ev.location || undefined,
+            status: 'pending',
+            priority,
+            dueDate: startDate,
+            url: ev.htmlLink || ev.hangoutLink || 'https://calendar.google.com',
+            metadata: {
+              sender: ev.organizer?.displayName || ev.organizer?.email,
+              rawId: ev.id,
+            },
+            createdAt: now,
+            updatedAt: now,
+          });
+        }
+      } catch (calErr) {
+        console.error('[GmailProvider] Error querying Google Calendar:', calErr);
+      }
+    }
+
+    // 3. Fetch Google Tasks
     if (this.tasks) {
       try {
         const tasklistsRes = await this.tasks.tasklists.list({ maxResults: 10 });
@@ -116,7 +171,6 @@ export class GmailProvider implements TaskProvider {
           });
 
           const taskItems = tasksRes.data.items || [];
-          const now = new Date();
 
           for (const t of taskItems) {
             if (!t.id || !t.title) continue;
@@ -176,7 +230,6 @@ export class GmailProvider implements TaskProvider {
     if (taskId.startsWith('gmail_') && this.gmail) {
       const rawId = taskId.replace(/^gmail_/, '');
       try {
-        // Remove STARRED label
         await this.gmail.users.messages.modify({
           userId: 'me',
           id: rawId,

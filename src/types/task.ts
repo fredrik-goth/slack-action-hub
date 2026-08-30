@@ -1,4 +1,4 @@
-export type TaskSource = 'trello' | 'gmail' | 'google_tasks' | 'custom';
+export type TaskSource = 'trello' | 'gmail' | 'google_tasks' | 'calendar' | 'custom';
 
 export type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'snoozed';
 
@@ -47,6 +47,7 @@ export interface AggregatedStats {
     trello: number;
     gmail: number;
     google_tasks: number;
+    calendar: number;
     custom: number;
   };
 }

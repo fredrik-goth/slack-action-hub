@@ -179,6 +179,21 @@ async function handleUserQuery(ctx: QueryContext): Promise<void> {
   }
 
   if (
+    normalized.includes('calendar') ||
+    normalized.includes('meeting') ||
+    normalized.includes('event') ||
+    normalized.includes('schedule')
+  ) {
+    const tasks = await taskAggregator.getTasks({ source: 'calendar' });
+    const pending = tasks.filter((t) => t.status !== 'completed');
+    await sendResponse({
+      blocks: buildTaskListBlocks(pending, `📅 Today's Meetings & Calendar Events (${pending.length})`),
+      text: `Found ${pending.length} upcoming calendar events.`,
+    });
+    return;
+  }
+
+  if (
     normalized.includes('mail') ||
     normalized.includes('email') ||
     normalized.includes('gmail') ||

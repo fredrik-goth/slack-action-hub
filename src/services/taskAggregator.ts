@@ -126,6 +126,7 @@ export class TaskAggregatorService {
       trello: 0,
       gmail: 0,
       google_tasks: 0,
+      calendar: 0,
       custom: 0,
     };
 
