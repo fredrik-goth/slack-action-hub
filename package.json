@@ -22,12 +22,15 @@
   "author": "Fredrik Goth",
   "license": "MIT",
   "dependencies": {
+    "@netlify/blobs": "^11.0.2",
+    "@netlify/functions": "^6.0.0",
     "@slack/bolt": "^3.21.4",
     "axios": "^1.7.9",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "googleapis": "^144.0.0",
-    "node-cron": "^3.0.3"
+    "node-cron": "^3.0.3",
+    "serverless-http": "^4.0.0"
   },
   "devDependencies": {
     "@types/express": "^5.0.0",

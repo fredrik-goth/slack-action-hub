@@ -1,7 +1,12 @@
 import axios from 'axios';
 import { TaskProvider } from '../../types/provider';
 import { TaskItem, TaskPriority } from '../../types/task';
-import { config } from '../../config';
+
+export interface TrelloProviderCredentials {
+  apiKey: string;
+  token: string;
+  memberId?: string;
+}
 
 interface TrelloCard {
   id: string;
@@ -10,8 +15,6 @@ interface TrelloCard {
   due: string | null;
   dueComplete: boolean;
   shortUrl: string;
-  idBoard: string;
-  idList: string;
   labels?: Array<{ name: string; color: string }>;
   checklists?: Array<{
     id: string;
@@ -25,39 +28,26 @@ export class TrelloProvider implements TaskProvider {
   readonly name = 'Trello';
   readonly source = 'trello' as const;
 
-  private apiKey?: string;
-  private token?: string;
-  private memberId: string;
-  private baseUrl = 'https://api.trello.com/1';
+  private readonly baseUrl = 'https://api.trello.com/1';
 
-  constructor() {
-    this.apiKey = config.trello.apiKey;
-    this.token = config.trello.token;
-    this.memberId = config.trello.memberId || 'me';
-  }
+  constructor(private creds: TrelloProviderCredentials) {}
 
   isConfigured(): boolean {
-    return !!(
-      this.apiKey &&
-      this.token &&
-      !this.apiKey.includes('your-') &&
-      !this.token.includes('your-')
-    );
+    return !!(this.creds.apiKey && this.creds.token);
   }
 
   async fetchTasks(): Promise<TaskItem[]> {
-    if (!this.isConfigured()) {
-      return [];
-    }
+    if (!this.isConfigured()) return [];
+
+    const memberId = this.creds.memberId || 'me';
 
     try {
-      // Fetch cards assigned to the member or on member's boards with board & list info
       const response = await axios.get<TrelloCard[]>(
-        `${this.baseUrl}/members/${this.memberId}/cards`,
+        `${this.baseUrl}/members/${memberId}/cards`,
         {
           params: {
-            key: this.apiKey,
-            token: this.token,
+            key: this.creds.apiKey,
+            token: this.creds.token,
             filter: 'open',
             attachments: false,
             checklists: 'all',
@@ -78,22 +68,16 @@ export class TrelloProvider implements TaskProvider {
 
         if (dueDate) {
           const diffHours = (dueDate.getTime() - now.getTime()) / (1000 * 60 * 60);
-          if (diffHours < 0) {
-            priority = 'urgent'; // Overdue
-          } else if (diffHours <= 24) {
-            priority = 'high'; // Due within 24 hours
-          }
+          if (diffHours < 0) priority = 'urgent';
+          else if (diffHours <= 24) priority = 'high';
         }
 
-        // Calculate checklist progress
         let completedCheckItems = 0;
         let totalCheckItems = 0;
-        if (card.checklists && card.checklists.length > 0) {
-          for (const list of card.checklists) {
-            for (const item of list.checkItems) {
-              totalCheckItems++;
-              if (item.state === 'complete') completedCheckItems++;
-            }
+        for (const list of card.checklists || []) {
+          for (const item of list.checkItems) {
+            totalCheckItems++;
+            if (item.state === 'complete') completedCheckItems++;
           }
         }
 
@@ -116,12 +100,12 @@ export class TrelloProvider implements TaskProvider {
                 : undefined,
             rawId: card.id,
           },
-          createdAt: new Date(),
-          updatedAt: new Date(),
+          createdAt: now,
+          updatedAt: now,
         };
       });
     } catch (error) {
-      console.error('[TrelloProvider] Failed to fetch Trello cards:', error);
+      console.error('[TrelloProvider] Failed to fetch cards:', error);
       return [];
     }
   }
@@ -134,16 +118,11 @@ export class TrelloProvider implements TaskProvider {
       await axios.put(
         `${this.baseUrl}/cards/${rawId}`,
         { dueComplete: true },
-        {
-          params: {
-            key: this.apiKey,
-            token: this.token,
-          },
-        }
+        { params: { key: this.creds.apiKey, token: this.creds.token } }
       );
       return true;
     } catch (error) {
-      console.error(`[TrelloProvider] Failed to mark card ${rawId} complete:`, error);
+      console.error(`[TrelloProvider] Failed to complete card ${rawId}:`, error);
       return false;
     }
   }
