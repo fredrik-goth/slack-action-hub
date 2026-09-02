@@ -6,9 +6,11 @@ import { TaskItem } from '../types/task';
 export function registerSlackAgent(app: App): void {
   console.log('✓ [Slack Agent] Registering DM, mention, and assistant listeners...');
 
-  // 1. All messages (DMs and channel messages where bot is present)
+  // 1. DM messages only (channel_type === 'im')
   app.event('message', async ({ event, client, say }: any) => {
     if (event.bot_id || event.subtype || !event.text) return;
+    // Only respond in DMs, not in channels (channels are handled by channelWatcher or app_mention)
+    if (event.channel_type !== 'im') return;
 
     try {
       await handleUserQuery({

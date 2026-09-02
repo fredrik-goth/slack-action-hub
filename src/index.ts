@@ -4,6 +4,7 @@ import { config } from './config';
 import { registerSlackAgent } from './slack/agent';
 import { registerSlashCommands } from './slack/commands';
 import { registerSlackActions } from './slack/actions';
+import { registerChannelWatcher } from './slack/channelWatcher';
 import { startDigestScheduler } from './services/scheduler';
 import { createOAuthRouter } from './routes/oauthRouter';
 
@@ -51,6 +52,7 @@ async function bootstrap(): Promise<void> {
   registerSlackAgent(slackApp);
   registerSlashCommands(slackApp);
   registerSlackActions(slackApp);
+  registerChannelWatcher(slackApp);
 
   // 6. Start daily digest scheduler
   startDigestScheduler(slackApp);

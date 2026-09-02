@@ -174,6 +174,36 @@ export function registerSlackActions(app: App): void {
     });
   });
 
+  // ── Assignment: Keep (acknowledge, stays in App Home) ─────────────────────
+  app.action('assignment_keep', async ({ ack, body, client, action }: any) => {
+    await ack();
+    const userId = body.user.id;
+    // Just acknowledge — task stays visible. Optionally update the DM message.
+    await client.chat.postMessage({
+      channel: userId,
+      text: '✅ Assignment kept — it will appear in your App Home until you remove it.',
+    });
+  });
+
+  // ── Assignment: Remove (hide from App Home) ────────────────────────────────
+  app.action('assignment_remove', async ({ ack, body, client, action }: any) => {
+    await ack();
+    const userId = body.user.id;
+    const assignmentId = action.value;
+    await userRepository.removeAssignment(assignmentId, userId);
+    userAggregatorRegistry.invalidate(userId);
+    await refreshHomeTab(client, userId);
+    await client.chat.postMessage({
+      channel: userId,
+      text: '🗑 Assignment removed from your Action Hub.',
+    });
+  });
+
+  // ── Assignment: Open link (no-op ack) ─────────────────────────────────────
+  app.action('assignment_open', async ({ ack }: any) => {
+    await ack();
+  });
+
   // ── No-op buttons (provider not configured at app level) ──────────────────
   app.action('settings_google_not_configured', async ({ ack, body, client }: any) => {
     await ack();

@@ -3,6 +3,7 @@ import { userRepository, GoogleCredentials, TrelloCredentials } from '../db/user
 import { GmailProvider } from '../providers/mail/gmailProvider';
 import { TrelloProvider } from '../providers/trello/trelloProvider';
 import { SlackTodosProvider } from '../providers/slack/slackTodosProvider';
+import { AssignmentProvider } from '../providers/slack/assignmentProvider';
 import { config } from '../config';
 
 class UserAggregatorRegistry {
@@ -54,6 +55,9 @@ class UserAggregatorRegistry {
 
     // Slack Todos — always enabled (native, no credentials required)
     providers.push(new SlackTodosProvider(slackUserId));
+
+    // Assignments — always enabled (from #Uppdrag channel watcher)
+    providers.push(new AssignmentProvider(slackUserId));
 
     const aggregator = new TaskAggregatorService(providers);
     this.instances.set(slackUserId, aggregator);

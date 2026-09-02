@@ -52,6 +52,7 @@ function sourceIcon(task: TaskItem): string {
     case 'gmail':        return '✉️';
     case 'google_tasks': return '📋';
     case 'calendar':     return '📅';
+    case 'assignment':   return '📨';
     default:             return '📌';
   }
 }
@@ -66,6 +67,8 @@ function sourceLabel(task: TaskItem): string {
       return `Tasks${task.metadata?.listName ? ` · ${task.metadata.listName}` : ''}`;
     case 'calendar':
       return ''; // icon alone is enough — no need to repeat "Calendar"
+    case 'assignment':
+      return `Uppdrag${task.metadata?.sender ? ` · from ${task.metadata.sender}` : ''}`;
     default:
       return 'Slack Todo';
   }
@@ -191,25 +194,48 @@ function buildTaskCard(task: TaskItem, isLast: boolean): KnownBlock[] {
       : undefined,
   });
 
-  blocks.push({
-    type: 'actions',
-    block_id: `act_${task.id.slice(0, 50)}`,
-    elements: [
-      {
-        type: 'button',
-        action_id: 'action_complete_task',
-        text: { type: 'plain_text', text: '✅  Done', emoji: true },
-        style: 'primary',
-        value: task.id,
-      },
-      {
-        type: 'button',
-        action_id: 'action_snooze_task',
-        text: { type: 'plain_text', text: '⏰  Snooze 24h', emoji: true },
-        value: task.id,
-      },
-    ],
-  });
+  if (task.source === 'assignment') {
+    blocks.push({
+      type: 'actions',
+      block_id: `act_${task.id.slice(0, 50)}`,
+      elements: [
+        {
+          type: 'button',
+          action_id: 'assignment_keep',
+          text: { type: 'plain_text', text: '✅  Keep', emoji: true },
+          style: 'primary',
+          value: task.id,
+        },
+        {
+          type: 'button',
+          action_id: 'assignment_remove',
+          text: { type: 'plain_text', text: '🗑  Remove', emoji: true },
+          style: 'danger',
+          value: task.id,
+        },
+      ],
+    });
+  } else {
+    blocks.push({
+      type: 'actions',
+      block_id: `act_${task.id.slice(0, 50)}`,
+      elements: [
+        {
+          type: 'button',
+          action_id: 'action_complete_task',
+          text: { type: 'plain_text', text: '✅  Done', emoji: true },
+          style: 'primary',
+          value: task.id,
+        },
+        {
+          type: 'button',
+          action_id: 'action_snooze_task',
+          text: { type: 'plain_text', text: '⏰  Snooze 24h', emoji: true },
+          value: task.id,
+        },
+      ],
+    });
+  }
 
   if (!isLast) blocks.push({ type: 'divider' });
 
@@ -381,6 +407,7 @@ export function buildHomeTabView(
       google_tasks: '📋  Google Tasks',
       calendar: '📅  Calendar',
       custom: '📌  Slack Todos',
+      assignment: '📨  Uppdrag',
     };
     const sourceName = sourceNames[activeSource] ?? activeSource;
 

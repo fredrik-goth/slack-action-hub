@@ -16,6 +16,7 @@ import { config } from '../../src/config';
 import { registerSlackAgent } from '../../src/slack/agent';
 import { registerSlashCommands } from '../../src/slack/commands';
 import { registerSlackActions } from '../../src/slack/actions';
+import { registerChannelWatcher } from '../../src/slack/channelWatcher';
 
 // Cached across warm Netlify invocations to avoid rebuilding every call
 let cachedHandler: ReturnType<typeof serverless> | null = null;
@@ -37,6 +38,7 @@ function getServerlessHandler() {
   registerSlackAgent(slackApp);
   registerSlashCommands(slackApp);
   registerSlackActions(slackApp);
+  registerChannelWatcher(slackApp);
 
   cachedHandler = serverless(receiver.app as express.Express);
   return cachedHandler;

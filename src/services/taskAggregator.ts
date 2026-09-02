@@ -84,7 +84,7 @@ export class TaskAggregatorService {
     const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
 
     let pending = 0, dueToday = 0, overdue = 0, completed = 0;
-    const bySource = { trello: 0, gmail: 0, google_tasks: 0, calendar: 0, custom: 0 };
+    const bySource = { trello: 0, gmail: 0, google_tasks: 0, calendar: 0, custom: 0, assignment: 0 };
 
     for (const t of tasks) {
       if (t.source in bySource) {

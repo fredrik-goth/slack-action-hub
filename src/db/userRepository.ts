@@ -32,6 +32,18 @@ export interface SlackTodoRow {
   updatedAt: string;
 }
 
+export interface AssignmentRow {
+  id: string;
+  slackUserId: string;
+  channelId: string;
+  messageTs: string;
+  text: string;
+  postedBy: string;
+  channelName: string;
+  status: 'pending' | 'removed';
+  createdAt: string;
+}
+
 // ── Store ─────────────────────────────────────────────────────────────────────
 // Production (Netlify): uses Netlify Blobs, context injected automatically.
 // Local dev (npm run dev): falls back to JSON files in ./data/
@@ -93,6 +105,8 @@ const K = {
   connectedProviders: (id: string)              => `connected:${id}`,
   userTodos:          (id: string)              => `todos:${id}`,
   todo:               (id: string)              => `todo:${id}`,
+  userAssignments:    (id: string)              => `assignments:${id}`,
+  assignment:         (id: string)              => `assignment:${id}`,
 };
 
 // ── Array-set helpers (simulate Redis sets with JSON arrays) ──────────────────
@@ -234,6 +248,43 @@ export const userRepository = {
     if (!todo || todo.slackUserId !== slackUserId) return false;
     await db().delete(K.todo(id));
     await arrayRemove(K.userTodos(slackUserId), id);
+    return true;
+  },
+
+  // ── Assignments (from #Uppdrag channel watcher) ───────────────────────────
+
+  async createAssignment(row: Omit<AssignmentRow, 'id' | 'createdAt'>): Promise<string> {
+    const id = `asgn_${row.slackUserId}_${row.messageTs.replace('.', '_')}`;
+    // Idempotent: skip if already exists
+    const existing = await db().get(K.assignment(id), { type: 'json' });
+    if (existing) return id;
+
+    const record: AssignmentRow = {
+      ...row,
+      id,
+      createdAt: new Date().toISOString(),
+    };
+    await db().set(K.assignment(id), JSON.stringify(record));
+    await arrayAdd(K.userAssignments(row.slackUserId), id);
+    return id;
+  },
+
+  async getAssignments(slackUserId: string): Promise<AssignmentRow[]> {
+    const ids = await arrayMembers(K.userAssignments(slackUserId));
+    if (!ids.length) return [];
+    const rows = await Promise.all(
+      ids.map((id) => db().get(K.assignment(id), { type: 'json' }) as Promise<AssignmentRow | null>)
+    );
+    return rows
+      .filter(Boolean)
+      .filter((r) => r!.status === 'pending') as AssignmentRow[];
+  },
+
+  async removeAssignment(id: string, slackUserId: string): Promise<boolean> {
+    const row = await db().get(K.assignment(id), { type: 'json' }) as AssignmentRow | null;
+    if (!row || row.slackUserId !== slackUserId) return false;
+    row.status = 'removed';
+    await db().set(K.assignment(id), JSON.stringify(row));
     return true;
   },
 };
