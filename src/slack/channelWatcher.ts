@@ -6,34 +6,30 @@ import { userAggregatorRegistry } from '../services/userAggregatorRegistry';
 const WATCH_CHANNEL_NAME = 'uppdrag';
 
 // Cached channel ID after first resolution
-let watchChannelId: string | null = null;
+let watchChannelId: string | null = process.env.UPPDRAG_CHANNEL_ID || null;
 
-async function resolveChannelId(client: any): Promise<string | null> {
-  if (watchChannelId) return watchChannelId;
+if (watchChannelId) {
+  console.log(`[ChannelWatcher] Using UPPDRAG_CHANNEL_ID from env: ${watchChannelId}`);
+}
+
+// Check a specific channel ID by calling conversations.info
+async function resolveChannelId(client: any, candidateChannelId: string): Promise<boolean> {
+  if (watchChannelId) return candidateChannelId === watchChannelId;
 
   try {
-    let cursor: string | undefined;
-    do {
-      const res = await client.conversations.list({
-        limit: 200,
-        cursor,
-        types: 'public_channel,private_channel',
-      });
-      const match = (res.channels || []).find(
-        (c: any) => c.name?.toLowerCase() === WATCH_CHANNEL_NAME
-      );
-      if (match) {
-        watchChannelId = match.id;
-        console.log(`[ChannelWatcher] Resolved #${WATCH_CHANNEL_NAME} → ${watchChannelId}`);
-        return watchChannelId;
-      }
-      cursor = res.response_metadata?.next_cursor;
-    } while (cursor);
-  } catch (err) {
-    console.error('[ChannelWatcher] Error resolving channel ID:', err);
+    const res = await client.conversations.info({ channel: candidateChannelId });
+    const name: string = res.channel?.name?.toLowerCase() || '';
+    if (name === WATCH_CHANNEL_NAME) {
+      watchChannelId = candidateChannelId;
+      console.log(`[ChannelWatcher] Resolved #${WATCH_CHANNEL_NAME} → ${watchChannelId}`);
+      return true;
+    }
+    return false;
+  } catch (err: any) {
+    // missing_scope or channel_not_found — log once, then fall back to name comparison on the event
+    console.error(`[ChannelWatcher] conversations.info failed (${err?.data?.error || err?.message}). Set UPPDRAG_CHANNEL_ID in .env to skip this lookup.`);
+    return false;
   }
-
-  return null;
 }
 
 // Parse <@USERID> mentions from Slack message text
@@ -46,12 +42,15 @@ export function registerChannelWatcher(app: App): void {
   console.log(`✓ [ChannelWatcher] Watching #${WATCH_CHANNEL_NAME} for @mentions...`);
 
   app.event('message', async ({ event, client }: any) => {
-    // Skip bot messages, edits, deletions
+    // Skip bot messages, edits, deletions, and DMs
     if (event.bot_id || event.subtype || !event.text) return;
+    if (event.channel_type === 'im') return;
 
-    // Resolve target channel ID lazily
-    const targetChannelId = await resolveChannelId(client);
-    if (!targetChannelId || event.channel !== targetChannelId) return;
+    // Check if this message is from the watched channel
+    const isTarget = await resolveChannelId(client, event.channel);
+    if (!isTarget) return;
+
+    console.log(`[ChannelWatcher] Message received in #${WATCH_CHANNEL_NAME} from ${event.user}`);
 
     const mentions = parseMentions(event.text);
     if (mentions.length === 0) return;
